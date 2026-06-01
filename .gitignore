@@ -1,0 +1,14 @@
+*.iml
+.gradle/
+/build/
+**/build/
+local.properties
+.idea/
+.DS_Store
+captures/
+*.apk
+*.ap_
+*.aab
+keystore/
+fdroid/keystore.p12
+temp-repo/
