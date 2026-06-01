@@ -1,0 +1,5 @@
+repo_name: OpenKleinanzeigen
+repo_description: Custom F-Droid repository for OpenKleinanzeigen
+repo_url: https://t-vk.github.io/OpenKleinanzeigen/fdroid/repo
+repo_maxage: 366
+archive_older: 0

@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version from commit message
+        id: bump
+        run: |
+          chmod +x scripts/version_bump.sh
+          BEFORE=$(cat version.properties)
+          ./scripts/version_bump.sh "${{ github.event.head_commit.message }}"
+          AFTER=$(cat version.properties)
+          if [[ "$BEFORE" != "$AFTER" ]]; then
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+            git add version.properties
+            git commit -m "chore: bump version to $(grep VERSION_NAME version.properties | cut -d= -f2) [skip ci]"
+            git push
+          else
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version_name=$(grep VERSION_NAME version.properties | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Build release APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          if [[ -n "$KEYSTORE_BASE64" ]]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file=$PWD/release.keystore \
+              -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+              -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+              -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+          else
+            ./gradlew assembleRelease
+          fi
+
+      - name: Package versioned APK (single artifact)
+        run: |
+          VERSION=$(grep VERSION_NAME version.properties | cut -d= -f2)
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          cp "$APK" "OpenKleinanzeigen-${VERSION}.apk"
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: OpenKleinanzeigen-*.apk
+
+      - name: Create GitHub Release
+        if: steps.bump.outputs.bumped == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.bump.outputs.version_name }}
+          name: OpenKleinanzeigen ${{ steps.bump.outputs.version_name }}
+          files: OpenKleinanzeigen-*.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update F-Droid repo
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fdroidserver
+          ./scripts/setup_fdroid_repo.sh
+          APK=$(ls OpenKleinanzeigen-*.apk | head -1)
+          cp "$APK" fdroid/repo/
+          cd fdroid
+          if [[ -n "${{ secrets.KEYSTORE_BASE64 }}" ]]; then
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystore.p12
+            cat >> config.yml <<EOF
+          repo_keyalias: ${{ secrets.KEY_ALIAS }}
+          keystore: keystore.p12
+          keystorepass: ${{ secrets.KEYSTORE_PASSWORD }}
+          keypass: ${{ secrets.KEY_PASSWORD }}
+          keydname: CN=OpenKleinanzeigen
+          EOF
+          fi
+          fdroid update --create-metadata || true
+
+      - name: Deploy F-Droid repo to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: fdroid
+          destination_dir: fdroid
+          keep_files: true
