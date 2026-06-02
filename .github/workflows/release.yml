@@ -123,6 +123,7 @@ jobs:
           test -f pages/fdroid/repo/index.png
           test -f pages/fdroid/repo/index-v1.jar
           test -f pages/fdroid/repo/index-v1.json
+          python3 -c "from PIL import Image; im=Image.open('pages/fdroid/repo/icons/icon.png'); assert max(im.size)<=256, f'bad repo icon {im.size}'; print('repo icon', im.size)"
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3

@@ -124,6 +124,35 @@ def patch_scan_apk_aapt_only() -> None:
 
 
 
+
+def repo_icon_source(fdroid_dir: Path) -> Path:
+    src = fdroid_dir.parent / "metadata" / "repo-icon.png"
+    if not src.is_file():
+        raise SystemExit(f"Missing repo icon source: {src}")
+    return src
+
+
+def install_repo_icon(fdroid_dir: Path) -> Path:
+    """Install repo icon where fdroidserver expects it (see repo_icon: icon.png in config)."""
+    src = repo_icon_source(fdroid_dir)
+    dest = fdroid_dir / "repo" / "icons" / "icon.png"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest)
+    shutil.copy2(src, fdroid_dir / "icon.png")
+    return dest
+
+
+def verify_repo_icon(path: Path) -> None:
+    from PIL import Image
+
+    im = Image.open(path)
+    w, h = im.size
+    if max(w, h) > 256:
+        raise SystemExit(
+            f"Repo icon at {path} is {w}x{h} — likely a QR placeholder, not the app/repo icon"
+        )
+
+
 def install_fallback_icons(apks: list, repo_dir: str, icon_path: Path) -> None:
     """Copy bundled PNG icons when the APK has only adaptive vector icons."""
     from fdroidserver.update import dpi_to_px, get_icon_dir, screen_densities
@@ -238,8 +267,13 @@ def main() -> None:
     if cachechanged:
         fdroid_update.write_cache(apkcache)
 
+    install_repo_icon(fdroid_dir)
+
     repoapps = fdroid_update.prepare_apps(apps, apks, "repo")
     index_make(repoapps, apks, "repo", archive=False)
+
+    install_repo_icon(fdroid_dir)
+    verify_repo_icon(fdroid_dir / "repo" / "icons" / "icon.png")
 
     required = [
         repo_dir / "index.html",
@@ -256,7 +290,7 @@ def main() -> None:
     if not icons:
         print("WARNING: no per-app icon PNG in repo/icons-*", file=sys.stderr)
 
-    print(f"F-Droid repo OK ({len(apks)} apk(s), index.html + QR present)")
+    print(f"F-Droid repo OK ({len(apks)} apk(s); repo icon installed)")
 
 
 if __name__ == "__main__":
