@@ -1,6 +1,6 @@
 name: Deploy Pages
 
-# Redeploy the F-Droid repo from the latest GitHub Release APK (no rebuild).
+# Redeploy GitHub Pages from the latest release APK (no Gradle rebuild).
 on:
   workflow_dispatch:
 
@@ -14,11 +14,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,6 +31,7 @@ jobs:
             "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG" \
             | jq -r '.assets[] | select(.name | endswith(".apk")) | .browser_download_url' | head -1)
           curl -fsSL -L -o release.apk "$ASSET"
+          echo "Downloaded $TAG"
 
       - name: Cache F-Droid repo signing key
         uses: actions/cache@v4
@@ -49,11 +47,33 @@ jobs:
           ./scripts/setup_fdroid_repo.sh
           ./scripts/build_fdroid_repo.sh release.apk
 
-      - uses: actions/configure-pages@v5
+      - name: Prepare GitHub Pages layout
+        run: |
+          mkdir -p pages/fdroid
+          cp -a fdroid/. pages/fdroid/
+          touch pages/.nojekyll
+          cat > pages/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head><meta charset="utf-8"><title>OpenKleinanzeigen</title>
+          <meta http-equiv="refresh" content="0; url=fdroid/repo/"></head>
+          <body><p><a href="fdroid/repo/">F-Droid repository</a></p></body>
+          </html>
+          EOF
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: fdroid
+          path: pages
 
+  deploy-pages:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4

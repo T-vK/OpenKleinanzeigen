@@ -75,7 +75,6 @@ jobs:
       - name: Accept SDK licenses
         run: yes | sdkmanager --licenses || true
 
-      # Single APK build (debug) — used for GitHub Releases and the F-Droid repo.
       - name: Build debug APK
         run: ./gradlew assembleDebug --build-cache --stacktrace
 
@@ -106,17 +105,32 @@ jobs:
           ./scripts/setup_fdroid_repo.sh
           ./scripts/build_fdroid_repo.sh "${{ steps.package.outputs.apk_name }}"
 
+      - name: Prepare GitHub Pages layout
+        run: |
+          # Site root must contain fdroid/repo/ so the URL matches config.yml repo_url.
+          mkdir -p pages/fdroid
+          cp -a fdroid/. pages/fdroid/
+          touch pages/.nojekyll
+          cat > pages/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head><meta charset="utf-8"><title>OpenKleinanzeigen</title>
+          <meta http-equiv="refresh" content="0; url=fdroid/repo/"></head>
+          <body><p><a href="fdroid/repo/">F-Droid repository</a></p></body>
+          </html>
+          EOF
+          test -f pages/fdroid/repo/index-v1.json
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-apk
           path: ${{ steps.package.outputs.apk_name }}
-
-      - name: Upload F-Droid Pages artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: github-pages
-          path: fdroid
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -135,20 +149,13 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
     concurrency:
       group: pages
       cancel-in-progress: false
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: github-pages
-          path: site
-
-      - uses: actions/configure-pages@v5
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-
-      - id: deployment
+      - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
