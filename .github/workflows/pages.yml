@@ -1,0 +1,58 @@
+name: Deploy Pages
+
+# Redeploy the F-Droid repo to GitHub Pages without a full release build.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download latest release APK
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/latest" \
+            | jq -r '.tag_name')
+          ASSET=$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG" \
+            | jq -r '.assets[] | select(.name | endswith(".apk")) | .browser_download_url' | head -1)
+          curl -fsSL -L -o release.apk "$ASSET"
+
+      - name: Cache F-Droid repo signing key
+        uses: actions/cache@v4
+        with:
+          path: fdroid/keystore.p12
+          key: fdroid-repo-signing-key-v1
+
+      - name: Build F-Droid repository
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fdroidserver jq
+          chmod +x scripts/build_fdroid_repo.sh scripts/setup_fdroid_repo.sh
+          ./scripts/setup_fdroid_repo.sh
+          ./scripts/build_fdroid_repo.sh release.apk
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: fdroid
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -32,6 +32,25 @@ android {
         buildConfigField("String", "GITHUB_REPO", "\"T-vK/OpenKleinanzeigen\"")
     }
 
+    signingConfigs {
+        create("release") {
+            val keystoreFile = rootProject.file(
+                providers.gradleProperty("RELEASE_STORE_FILE").orNull ?: "release.keystore",
+            )
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = providers.gradleProperty("RELEASE_STORE_PASSWORD").orNull
+                    ?: System.getenv("RELEASE_STORE_PASSWORD")
+                keyAlias = providers.gradleProperty("RELEASE_KEY_ALIAS").orNull
+                    ?: System.getenv("RELEASE_KEY_ALIAS")
+                    ?: "release"
+                keyPassword = providers.gradleProperty("RELEASE_KEY_PASSWORD").orNull
+                    ?: System.getenv("RELEASE_KEY_PASSWORD")
+                    ?: storePassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -39,6 +58,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            signingConfig = signingConfigs.getByName("release").takeIf {
+                signingConfigs.getByName("release").storeFile?.exists() == true
+            } ?: signingConfigs.getByName("debug")
         }
         debug {
             applicationIdSuffix = ".debug"

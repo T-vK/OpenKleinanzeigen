@@ -12,3 +12,4 @@ captures/
 keystore/
 fdroid/keystore.p12
 temp-repo/
+release.keystore

@@ -77,3 +77,20 @@ Implementation progress: [`docs/stories/`](docs/stories/README.md)
 ## License
 
 AGPL-3.0-or-later — see [LICENSE](LICENSE).
+
+
+## Troubleshooting
+
+### "App not installed" when sideloading the APK
+
+Release builds **must be signed**. If GitHub Actions secrets for `KEYSTORE_BASE64` are not configured, CI signs the release APK with the **debug key** so it remains installable for testing. For production updates you should add a stable release keystore (see secrets table above) so all releases share the same signature.
+
+The logcat line `PowerHint cannot create session` is unrelated and can be ignored.
+
+### F-Droid custom repo 404
+
+GitHub Pages must use **Source: GitHub Actions** (not `gh-pages` branch). The `Release` workflow deploys the repo to:
+
+`https://t-vk.github.io/OpenKleinanzeigen/fdroid/repo/`
+
+After a successful release run, open that URL — you should see `index-v1.json` (not an HTML 404 page). You can also run the **Deploy Pages** workflow manually to republish from the latest GitHub release APK.
