@@ -5,17 +5,25 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 
 object AppLogger {
-    private const val MAX_LINES = 2000
+    private const val MAX_LINES = 4000
     private val listeners = CopyOnWriteArrayList<(String) -> Unit>()
     private val buffer = ArrayDeque<String>(MAX_LINES)
-  private var logFile: File? = null
+    private var logFile: File? = null
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+    private val enabled = AtomicBoolean(true)
 
     fun init(file: File) {
         logFile = file
     }
+
+    fun setEnabled(value: Boolean) {
+        enabled.set(value)
+    }
+
+    fun isEnabled(): Boolean = enabled.get()
 
     fun d(tag: String, message: String) = log("D", tag, message)
     fun i(tag: String, message: String) = log("I", tag, message)
@@ -31,16 +39,19 @@ object AppLogger {
             if (buffer.size >= MAX_LINES) buffer.removeFirst()
             buffer.addLast(line)
         }
-        logFile?.appendText("$line\n")
-        listeners.forEach { it(line) }
+        if (enabled.get()) {
+            logFile?.appendText("$line\n")
+            listeners.forEach { it(line) }
+        }
         android.util.Log.println(
             when (level) {
                 "E" -> android.util.Log.ERROR
                 "W" -> android.util.Log.WARN
+                "I" -> android.util.Log.INFO
                 else -> android.util.Log.DEBUG
             },
             tag,
-            message,
+            message.take(4000),
         )
     }
 

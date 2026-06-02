@@ -36,7 +36,6 @@ fun AgentsScreen(repos: AppRepositories, onAdd: () -> Unit, onEdit: (Long) -> Un
     val scope = rememberCoroutineScope()
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.agents_title)) }) },
         floatingActionButton = {
             FloatingActionButton(onClick = onAdd) {
                 Icon(Icons.Default.Add, contentDescription = stringResource(R.string.agents_add))

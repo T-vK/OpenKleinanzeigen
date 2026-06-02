@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.Flow
 interface ListingRepository {
     suspend fun search(query: SearchQuery): List<Listing>
     suspend fun getListing(id: String): Listing
+    suspend fun searchLocations(query: String, limit: Int = 15): List<Location>
     suspend fun getTopLocations(): List<Location>
     suspend fun getCategories(): List<Category>
 }

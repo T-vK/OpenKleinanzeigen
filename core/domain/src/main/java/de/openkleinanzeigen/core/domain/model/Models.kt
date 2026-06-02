@@ -10,9 +10,14 @@ data class Listing(
     val description: String? = null,
 )
 
+enum class AdType { OFFER, WANTED }
+
+enum class PosterType { PRIVATE, COMMERCIAL }
+
 data class SearchQuery(
     val query: String = "",
     val locationId: Int? = null,
+    val locationName: String? = null,
     val radiusKm: Int? = null,
     val minPrice: Int? = null,
     val maxPrice: Int? = null,
@@ -20,11 +25,27 @@ data class SearchQuery(
     val page: Int = 0,
     val size: Int = 30,
     val pictureRequired: Boolean = false,
-)
+    val buyNowOnly: Boolean = false,
+    val adType: AdType? = null,
+    val posterType: PosterType? = null,
+) {
+    fun activeFilterCount(): Int {
+        var n = 0
+        if (minPrice != null) n++
+        if (maxPrice != null) n++
+        if (categoryId != null) n++
+        if (pictureRequired) n++
+        if (buyNowOnly) n++
+        if (adType != null) n++
+        if (posterType != null) n++
+        return n
+    }
+}
 
 data class Location(
     val id: Int,
     val name: String,
+    val subtitle: String? = null,
 )
 
 data class Category(

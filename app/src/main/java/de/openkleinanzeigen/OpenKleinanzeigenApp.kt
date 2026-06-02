@@ -9,6 +9,11 @@ import androidx.core.os.LocaleListCompat
 import de.openkleinanzeigen.core.common.AppLogger
 import de.openkleinanzeigen.core.data.AppRepositories
 import de.openkleinanzeigen.work.WorkScheduler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Locale
 
@@ -21,6 +26,10 @@ class OpenKleinanzeigenApp : Application() {
         applyLocale()
         AppLogger.init(File(filesDir, "debug.log"))
         repos = AppRepositories(this)
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            val settings = repos.settings.observeSettings().first()
+            AppLogger.setEnabled(settings.debugLoggingEnabled)
+        }
         createNotificationChannels()
         WorkScheduler.scheduleAll(this)
     }

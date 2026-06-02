@@ -7,7 +7,6 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -41,17 +40,41 @@ class KleinanzeigenJsonParser(private val json: Json = Json { ignoreUnknownKeys 
         val wrapper = root[locationsKey]?.jsonObject ?: return emptyList()
         val value = wrapper["value"]?.jsonObject ?: return emptyList()
         val locElement = value["location"] ?: return emptyList()
-        val locations = when (locElement) {
-            is JsonArray -> locElement
-            is JsonObject -> JsonArray(listOf(locElement))
+        return flattenLocationElements(locElement)
+    }
+
+    private fun flattenLocationElements(element: JsonElement): List<Location> {
+        val items = when (element) {
+            is JsonArray -> element
+            is JsonObject -> JsonArray(listOf(element))
             else -> return emptyList()
         }
-        return locations.mapNotNull { loc ->
-            val obj = loc.jsonObject
-            val id = obj["id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
-                ?: obj["id"]?.jsonObject?.get("value")?.jsonPrimitive?.contentOrNull?.toIntOrNull()
-            val name = textValue(obj["localized-name"]) ?: textValue(obj["name"]) ?: return@mapNotNull null
-            id?.let { Location(it, name) }
+        val results = mutableListOf<Location>()
+        for (item in items) {
+            collectLocations(item.jsonObject, results)
+        }
+        return results.distinctBy { it.id }
+    }
+
+    private fun collectLocations(obj: JsonObject, out: MutableList<Location>) {
+        val id = obj["id"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+            ?: obj["id"]?.jsonObject?.get("value")?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+        val name = textValue(obj["localized-name"]) ?: textValue(obj["id-name"])
+        if (id != null && !name.isNullOrBlank()) {
+            val region = obj["regions"]?.jsonObject?.get("region")?.let { regionEl ->
+                when (regionEl) {
+                    is JsonArray -> regionEl.firstOrNull()?.jsonObject
+                    is JsonObject -> regionEl
+                    else -> null
+                }
+            }?.let { textValue(it["localized-name"]) }
+            out.add(Location(id = id, name = name, subtitle = region))
+        }
+        val nested = obj["location"] ?: return
+        when (nested) {
+            is JsonArray -> nested.forEach { collectLocations(it.jsonObject, out) }
+            is JsonObject -> collectLocations(nested, out)
+            else -> Unit
         }
     }
 

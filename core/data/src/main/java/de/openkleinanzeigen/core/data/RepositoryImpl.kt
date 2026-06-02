@@ -32,7 +32,10 @@ import okhttp3.Request
 
 class AppRepositories(context: Context) {
     private val api = KleinanzeigenApiClient()
-    private val db = Room.databaseBuilder(context, AppDatabase::class.java, "openkleinanzeigen.db").build()
+    private val db = Room.databaseBuilder(context, AppDatabase::class.java, "openkleinanzeigen.db")
+        .addMigrations(AppDatabase.MIGRATION_1_2)
+        .fallbackToDestructiveMigration()
+        .build()
     private val settingsStore = SettingsDataStore(context)
     private val sessionStore = SessionStore(context)
     private val sessionFlow = MutableStateFlow(sessionStore.load())
@@ -49,6 +52,7 @@ class AppRepositories(context: Context) {
 private class ListingRepositoryImpl(private val api: KleinanzeigenApiClient) : ListingRepository {
     override suspend fun search(query: SearchQuery) = api.search(query)
     override suspend fun getListing(id: String) = api.getListing(id)
+    override suspend fun searchLocations(query: String, limit: Int) = api.searchLocations(query, limit)
     override suspend fun getTopLocations() = api.getTopLocations()
     override suspend fun getCategories() = api.getCategories()
 }
@@ -92,7 +96,15 @@ private class SearchAgentRepositoryImpl(
 
 private class SettingsRepositoryImpl(private val store: SettingsDataStore) : SettingsRepository {
     override fun observeSettings(): Flow<AppSettings> = store.settings
-    override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) = store.update(transform)
+    override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) {
+        var debug = false
+        store.update { current ->
+            val updated = transform(current)
+            debug = updated.debugLoggingEnabled
+            updated
+        }
+        de.openkleinanzeigen.core.common.AppLogger.setEnabled(debug)
+    }
 }
 
 private class AuthRepositoryImpl(
@@ -177,10 +189,15 @@ private fun SearchAgentEntity.toDomain() = LocalSearchAgent(
     query = SearchQuery(
         query = query,
         locationId = locationId,
+        locationName = locationName,
         radiusKm = radiusKm,
         minPrice = minPrice,
         maxPrice = maxPrice,
         categoryId = categoryId,
+        pictureRequired = pictureRequired,
+        buyNowOnly = buyNowOnly,
+        adType = adType?.let { runCatching { de.openkleinanzeigen.core.domain.model.AdType.valueOf(it) }.getOrNull() },
+        posterType = posterType?.let { runCatching { de.openkleinanzeigen.core.domain.model.PosterType.valueOf(it) }.getOrNull() },
     ),
     enabled = enabled,
     autoMessageTemplate = autoMessageTemplate,
@@ -192,10 +209,15 @@ private fun LocalSearchAgent.toEntity() = SearchAgentEntity(
     name = name,
     query = query.query,
     locationId = query.locationId,
+    locationName = query.locationName,
     radiusKm = query.radiusKm,
     minPrice = query.minPrice,
     maxPrice = query.maxPrice,
     categoryId = query.categoryId,
+    pictureRequired = query.pictureRequired,
+    buyNowOnly = query.buyNowOnly,
+    adType = query.adType?.name,
+    posterType = query.posterType?.name,
     enabled = enabled,
     autoMessageTemplate = autoMessageTemplate,
     notifyOnMatch = notifyOnMatch,

@@ -1,29 +1,15 @@
 package de.openkleinanzeigen.ui
 
 import androidx.annotation.StringRes
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Message
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import de.openkleinanzeigen.R
 import de.openkleinanzeigen.core.data.AppRepositories
+import de.openkleinanzeigen.ui.components.AppShell
 import de.openkleinanzeigen.ui.screens.AgentEditScreen
 import de.openkleinanzeigen.ui.screens.AgentsScreen
 import de.openkleinanzeigen.ui.screens.ChatScreen
@@ -41,52 +27,40 @@ enum class TopRoute(val route: String, @StringRes val label: Int) {
     Settings("settings", R.string.nav_settings),
 }
 
+private val topLevelRoutes = TopRoute.entries.map { it.route }.toSet()
+
 @Composable
 fun OpenKleinanzeigenAppUi(repos: AppRepositories) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = navBackStackEntry?.destination
-    val topLevelRoutes = TopRoute.entries.toList()
-    val showBottomBar = currentDestination?.route in topLevelRoutes.map { it.route }
+    val currentRoute = navBackStackEntry?.destination?.route?.substringBefore("/")
+    val showDrawer = currentRoute in topLevelRoutes
 
-    Scaffold(
-        bottomBar = {
-            if (showBottomBar) {
-                NavigationBar {
-                    topLevelRoutes.forEach { top ->
-                        NavigationBarItem(
-                            icon = {
-                                Icon(
-                                    when (top) {
-                                        TopRoute.Search -> Icons.Default.Search
-                                        TopRoute.Agents -> Icons.Default.Notifications
-                                        TopRoute.Messages -> Icons.AutoMirrored.Filled.Message
-                                        TopRoute.Settings -> Icons.Default.Settings
-                                    },
-                                    contentDescription = null,
-                                )
-                            },
-                            label = { Text(stringResource(top.label)) },
-                            selected = currentDestination?.hierarchy?.any { it.route == top.route } == true,
-                            onClick = {
-                                navController.navigate(top.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                        )
-                    }
-                }
+    val titleRes = when (currentRoute) {
+        TopRoute.Search.route -> TopRoute.Search.label
+        TopRoute.Agents.route -> TopRoute.Agents.label
+        TopRoute.Messages.route -> TopRoute.Messages.label
+        TopRoute.Settings.route -> TopRoute.Settings.label
+        else -> R.string.app_name
+    }
+
+    AppShell(
+        currentRoute = currentRoute,
+        titleRes = titleRes,
+        showDrawer = showDrawer,
+        onNavigate = { route ->
+            navController.navigate(route) {
+                popUpTo(TopRoute.Search.route) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
             }
         },
-    ) { padding ->
+        onLogs = { navController.navigate("logs") },
+    ) { modifier ->
         NavHost(
             navController = navController,
             startDestination = TopRoute.Search.route,
-            modifier = Modifier.padding(padding),
+            modifier = modifier,
         ) {
             composable(TopRoute.Search.route) {
                 SearchScreen(
