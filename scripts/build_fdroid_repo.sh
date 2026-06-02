@@ -1,44 +1,29 @@
 #!/usr/bin/env bash
-# Builds the F-Droid repo directory for GitHub Pages (fdroid/repo/...).
+# Builds a complete F-Droid repo (index.html, QR code, icons, signed index-v1.jar).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FDROID_DIR="$ROOT/fdroid"
-REPO_DIR="$FDROID_DIR/repo"
-CONFIG="$FDROID_DIR/config.yml"
 KEYSTORE="$FDROID_DIR/keystore.p12"
 APK_SRC="${1:-}"
-
-mkdir -p "$REPO_DIR" "$FDROID_DIR/repo/icons"
 
 if [[ -z "$APK_SRC" || ! -f "$APK_SRC" ]]; then
   echo "Usage: $0 /path/to/OpenKleinanzeigen-x.y.z.apk" >&2
   exit 1
 fi
 
-# fdroid expects a repo icon.
-ICON="$FDROID_DIR/repo/icons/icon.png"
-if [[ ! -f "$ICON" ]]; then
-  cp "$ROOT/app/src/main/res/drawable/ic_launcher_foreground.xml" "$ICON" 2>/dev/null || true
-  if [[ ! -f "$ICON" ]] || file "$ICON" | grep -q XML; then
-    # Minimal valid PNG placeholder
-    python3 -c "
-import struct, zlib, pathlib
-p = pathlib.Path('$ICON')
-p.parent.mkdir(parents=True, exist_ok=True)
-def chunk(t, d):
-    return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
-p.write_bytes(b'\\x89PNG\\r\\n\\x1a\\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 48, 48, 8, 2, 0, 0, 0))
-+ chunk(b'IDAT', zlib.compress(b'\\x00' * 49)) + chunk(b'IEND', b''))
-"
-  fi
+mkdir -p "$FDROID_DIR/metadata" "$FDROID_DIR/repo"
+
+# Copy app metadata into fdroid tree if needed.
+if [[ -f "$ROOT/metadata/de.openkleinanzeigen.yml" ]]; then
+  cp "$ROOT/metadata/de.openkleinanzeigen.yml" "$FDROID_DIR/metadata/"
 fi
 
-# Repo signing key (signs index-v1.json, NOT the APK). Cached in CI between runs.
+# Repo signing key (signs the index, not the APK).
 if [[ -n "${FDROID_KEYSTORE_BASE64:-}" ]]; then
   echo "$FDROID_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE"
 elif [[ ! -f "$KEYSTORE" ]]; then
-  echo "Generating F-Droid repo signing keystore at $KEYSTORE"
+  echo "Generating F-Droid repo signing keystore"
   keytool -genkeypair -v \
     -keystore "$KEYSTORE" \
     -storetype PKCS12 \
@@ -49,7 +34,11 @@ elif [[ ! -f "$KEYSTORE" ]]; then
     -dname "CN=OpenKleinanzeigen F-Droid Repo"
 fi
 
-if ! grep -q "repo_keyalias" "$CONFIG" 2>/dev/null; then
+CONFIG="$FDROID_DIR/config.yml"
+if [[ ! -f "$CONFIG" ]]; then
+  "$ROOT/scripts/setup_fdroid_repo.sh"
+fi
+if ! grep -q "repo_keyalias" "$CONFIG"; then
   cat >> "$CONFIG" <<EOF
 
 repo_keyalias: ${FDROID_KEY_ALIAS:-openkleinanzeigen}
@@ -57,21 +46,24 @@ keystore: keystore.p12
 keystorepass: ${FDROID_KEYSTORE_PASS:-openkleinanzeigen}
 keypass: ${FDROID_KEY_PASS:-openkleinanzeigen}
 keydname: CN=OpenKleinanzeigen F-Droid Repo
-repo_icon: repo/icons/icon.png
+repo_icon: icon.png
 EOF
 fi
 
-chmod 600 "$CONFIG" "$KEYSTORE" 2>/dev/null || true
-
-# Build index without androguard (broken on AGP 35 / R8 output).
-pip install --quiet 'fdroidserver==2.3.3' 'androguard==3.4.0a1'
-chmod +x "$ROOT/scripts/build_fdroid_index.py"
-"$ROOT/scripts/build_fdroid_index.py" "$APK_SRC" "$FDROID_DIR"
-
-if [[ ! -f "$REPO_DIR/index-v1.json" ]]; then
-  echo "ERROR: index-v1.json missing after build" >&2
+# Placeholder repo icon until fdroid update generates the final set.
+mkdir -p "$FDROID_DIR/repo/icons"
+if [[ -f "$ROOT/metadata/repo-icon.png" ]]; then
+  cp "$ROOT/metadata/repo-icon.png" "$FDROID_DIR/repo/icons/icon.png"
+elif [[ ! -f "$FDROID_DIR/repo/icons/icon.png" ]]; then
+  echo "Missing metadata/repo-icon.png" >&2
   exit 1
 fi
+chmod 600 "$CONFIG" "$KEYSTORE" 2>/dev/null || true
 
-echo "F-Droid repo ready: $REPO_DIR"
-ls -la "$REPO_DIR" | head -20
+pip install --quiet 'fdroidserver==2.3.3' 'androguard==3.4.0a1' 'qrcode[pil]'
+
+chmod +x "$ROOT/scripts/build_fdroid_repo.py"
+"$ROOT/scripts/build_fdroid_repo.py" "$APK_SRC" "$FDROID_DIR"
+
+echo "Repo listing:"
+ls -la "$FDROID_DIR/repo" | head -25

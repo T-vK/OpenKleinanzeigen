@@ -13,3 +13,8 @@ keystore/
 fdroid/keystore.p12
 temp-repo/
 release.keystore
+
+fdroid/repo/
+repo/
+fdroid/tmp/
+fdroid/metadata/

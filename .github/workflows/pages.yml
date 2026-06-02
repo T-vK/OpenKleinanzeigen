@@ -43,7 +43,7 @@ jobs:
         env:
           FDROID_KEYSTORE_BASE64: ${{ secrets.FDROID_KEYSTORE_BASE64 }}
         run: |
-          chmod +x scripts/build_fdroid_repo.sh scripts/setup_fdroid_repo.sh scripts/build_fdroid_index.py
+          chmod +x scripts/build_fdroid_repo.sh scripts/setup_fdroid_repo.sh scripts/build_fdroid_repo.py
           ./scripts/setup_fdroid_repo.sh
           ./scripts/build_fdroid_repo.sh release.apk
 

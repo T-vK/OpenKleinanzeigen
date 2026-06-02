@@ -101,7 +101,7 @@ jobs:
         env:
           FDROID_KEYSTORE_BASE64: ${{ secrets.FDROID_KEYSTORE_BASE64 }}
         run: |
-          chmod +x scripts/build_fdroid_repo.sh scripts/setup_fdroid_repo.sh scripts/build_fdroid_index.py
+          chmod +x scripts/build_fdroid_repo.sh scripts/setup_fdroid_repo.sh scripts/build_fdroid_repo.py
           ./scripts/setup_fdroid_repo.sh
           ./scripts/build_fdroid_repo.sh "${{ steps.package.outputs.apk_name }}"
 
@@ -119,6 +119,9 @@ jobs:
           <body><p><a href="fdroid/repo/">F-Droid repository</a></p></body>
           </html>
           EOF
+          test -f pages/fdroid/repo/index.html
+          test -f pages/fdroid/repo/index.png
+          test -f pages/fdroid/repo/index-v1.jar
           test -f pages/fdroid/repo/index-v1.json
 
       - name: Upload GitHub Pages artifact

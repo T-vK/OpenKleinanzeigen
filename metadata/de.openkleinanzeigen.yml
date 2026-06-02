@@ -1,0 +1,19 @@
+AntiFeatures:
+  - NonFreeNet
+Categories:
+  - Internet
+License: AGPL-3.0-or-later
+SourceCode: https://github.com/T-vK/OpenKleinanzeigen
+WebSite: https://github.com/T-vK/OpenKleinanzeigen
+Summary: Unofficial open-source Kleinanzeigen client with local search agents and messaging.
+
+Description: |
+  OpenKleinanzeigen is a privacy-friendly, open-source client for kleinanzeigen.de focused on buyers.
+
+  Features:
+  • Search listings without an account
+  • Local search agents with notifications
+  • Optional login for messages and Kleinanzeigen-side agents
+  • Auto-update from the project F-Droid repository (opt-in)
+
+  This app uses the unofficial mobile API (NonFreeNet anti-feature).
