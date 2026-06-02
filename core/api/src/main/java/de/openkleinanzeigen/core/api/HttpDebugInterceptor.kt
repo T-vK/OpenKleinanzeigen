@@ -2,7 +2,6 @@ package de.openkleinanzeigen.core.api
 
 import de.openkleinanzeigen.core.common.AppLogger
 import okhttp3.Interceptor
-import okhttp3.Request
 import okhttp3.Response
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicLong
@@ -53,27 +52,22 @@ class HttpDebugInterceptor : Interceptor {
         }
     }
 
-    private fun logRequest(id: Long, request: Request) {
+    private fun logRequest(id: Long, request: okhttp3.Request) {
         AppLogger.d("HTTP", "#$id → ${request.method} ${request.url}")
         request.headers.forEach { (name, value) ->
             AppLogger.d("HTTP", "#$id   Request-Header: $name: ${redactHeader(name, value)}")
         }
-        val body = request.body
-        if (body != null && !body.isDuplex() && !body.isOneShot()) {
-            try {
-                val buffer = Buffer()
-                body.writeTo(buffer)
-                val raw = buffer.readUtf8()
-                if (raw.isNotEmpty()) {
-                    AppLogger.d("HTTP", "#$id   Request-Body: ${redactBody(raw)}")
-                }
-            } catch (e: Exception) {
-                AppLogger.d("HTTP", "#$id   Request-Body: <could not read: ${e.message}>")
-            }
+        request.body?.let { body ->
+            val length = if (body.contentLength() >= 0) body.contentLength().toString() else "unknown"
+            AppLogger.d(
+                "HTTP",
+                "#$id   Request-Body: type=${body.contentType()} length=$length" +
+                    if (body.isOneShot()) " (one-shot)" else "",
+            )
         }
     }
 
-    private fun logResponse(id: Long, request: Request, response: Response, startMs: Long): Response {
+    private fun logResponse(id: Long, request: okhttp3.Request, response: Response, startMs: Long): Response {
         val elapsed = System.currentTimeMillis() - startMs
         val peek = response.peekBody(MAX_BODY_LOG_BYTES)
         val bodyText = peek.string()

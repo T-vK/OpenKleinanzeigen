@@ -51,6 +51,7 @@ jobs:
         run: |
           mkdir -p pages/fdroid
           cp -a fdroid/. pages/fdroid/
+          pip install --quiet pillow
           python3 -c "from PIL import Image; im=Image.open('pages/fdroid/repo/icons/icon.png'); assert max(im.size)<=256, f'bad repo icon {im.size}'; print('repo icon', im.size)"
           touch pages/.nojekyll
           cat > pages/index.html <<'EOF'
