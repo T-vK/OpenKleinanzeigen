@@ -37,6 +37,9 @@ class KleinanzeigenApiClient(
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(60, TimeUnit.SECONDS)
+            .addInterceptor(HttpDebugInterceptor())
             .build()
     }
 
@@ -56,9 +59,11 @@ class KleinanzeigenApiClient(
             query.adType?.let { addQueryParameter("adType", it.name) }
             query.posterType?.let { addQueryParameter("posterType", it.name) }
         }.build()
-
+        AppLogger.d("KleinanzeigenApi", "search q=${query.query} locationId=${query.locationId} radius=${query.radiusKm}")
         val body = executePublic(Request.Builder().url(url).get().build())
-        return parser.parseSearchResponse(body)
+        val listings = parser.parseSearchResponse(body)
+        AppLogger.d("KleinanzeigenApi", "search returned ${listings.size} listing(s)")
+        return listings
     }
 
     fun getListing(id: String): Listing {
@@ -76,7 +81,9 @@ class KleinanzeigenApiClient(
             .addQueryParameter("limit", limit.coerceIn(1, 50).toString())
             .build()
         val body = executePublic(Request.Builder().url(url).get().build())
-        return parser.parseLocations(body).take(limit)
+        val locations = parser.parseLocations(body).take(limit)
+        AppLogger.d("KleinanzeigenApi", "searchLocations q=$query → ${locations.size} hit(s)")
+        return locations
     }
 
     fun getTopLocations(): List<Location> {
@@ -97,7 +104,8 @@ class KleinanzeigenApiClient(
         val maskedEmail = email.trim().let { e ->
             if (e.length <= 3) "***" else e.take(2) + "***@" + e.substringAfter('@', "")
         }
-        AppLogger.i("Auth", "Login attempt for $maskedEmail")
+        AppLogger.i("Auth", "Login attempt for $maskedEmail → $GATEWAY_BASE/auth/login")
+        AppLogger.d("Auth", "Request-Body: {\"username\":\"${email.escapeJson()}\",\"password\":\"***\"}")
         val jsonBody = """{"username":"${email.escapeJson()}","password":"${password.escapeJson()}"}"""
         val request = Request.Builder()
             .url("$GATEWAY_BASE/auth/login")
@@ -106,7 +114,8 @@ class KleinanzeigenApiClient(
             .post(jsonBody.toRequestBody("application/json".toMediaType()))
             .build()
         return try {
-            val body = execute(request, auth = null, logBodies = true)
+            val body = execute(request, auth = null)
+            AppLogger.d("Auth", "Login response keys: ${Json.parseToJsonElement(body).jsonObject.keys}")
             val json = Json.parseToJsonElement(body).jsonObject
             val token = json["accessToken"]?.jsonPrimitive?.contentOrNull
                 ?: json["access_token"]?.jsonPrimitive?.contentOrNull
@@ -116,13 +125,13 @@ class KleinanzeigenApiClient(
                 ?: "unknown"
             val refresh = json["refreshToken"]?.jsonPrimitive?.contentOrNull
                 ?: json["refresh_token"]?.jsonPrimitive?.contentOrNull
-            AppLogger.i("Auth", "Login OK userId=$userId tokenLen=${token.length}")
+            AppLogger.i("Auth", "Login OK userId=$userId tokenLen=${token.length} refresh=${refresh != null}")
             UserSession(userId = userId, email = email.trim(), accessToken = token, refreshToken = refresh)
         } catch (e: ApiException) {
-            AppLogger.e("Auth", "Login failed: ${e.message}", e)
+            AppLogger.e("Auth", "Login failed (HTTP): ${e.message}", e)
             throw e
         } catch (e: Exception) {
-            AppLogger.e("Auth", "Login error: ${e.message}", e)
+            AppLogger.e("Auth", "Login failed: ${e.message}", e)
             throw e
         }
     }
@@ -183,40 +192,16 @@ class KleinanzeigenApiClient(
         return execute(authed, auth = null)
     }
 
-    private fun execute(
-        request: Request,
-        auth: String?,
-        logBodies: Boolean = false,
-    ): String {
+    private fun execute(request: Request, auth: String?): String {
         val builder = request.newBuilder().header("User-Agent", USER_AGENT)
         if (auth != null) {
             builder.header("Authorization", "Bearer $auth")
-            AppLogger.d("KleinanzeigenApi", "Bearer token length=${auth.length}")
         }
         val built = builder.build()
-        val start = System.currentTimeMillis()
-        AppLogger.d("KleinanzeigenApi", "→ ${built.method} ${built.url}")
-        built.headers.forEach { (name, value) ->
-            if (name.equals("Authorization", ignoreCase = true)) {
-                AppLogger.d("KleinanzeigenApi", "  $name: ${value.take(20)}…")
-            } else {
-                AppLogger.d("KleinanzeigenApi", "  $name: $value")
-            }
-        }
         httpClient.newCall(built).execute().use { response ->
             val body = response.body?.string().orEmpty()
-            val elapsed = System.currentTimeMillis() - start
-            AppLogger.d(
-                "KleinanzeigenApi",
-                "← ${response.code} ${built.url} (${elapsed}ms, ${body.length} bytes)",
-            )
             if (!response.isSuccessful) {
-                val snippet = body.take(800)
-                AppLogger.e("KleinanzeigenApi", "HTTP ${response.code} body: $snippet")
-                throw ApiException("HTTP ${response.code}: ${snippet.take(200)}", response.code)
-            }
-            if (logBodies && body.isNotEmpty()) {
-                AppLogger.d("KleinanzeigenApi", "Response body: ${body.take(600)}")
+                throw ApiException("HTTP ${response.code}: ${body.take(500)}", response.code)
             }
             return body
         }

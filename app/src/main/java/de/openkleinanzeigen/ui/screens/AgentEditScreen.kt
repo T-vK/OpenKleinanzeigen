@@ -109,7 +109,14 @@ fun AgentEditScreen(repos: AppRepositories, agentId: Long?, onDone: () -> Unit) 
                 suggestions = suggestions,
                 onSearchQuery = { q ->
                     scope.launch {
-                        runCatching { repos.listing.searchLocations(q) }.onSuccess { suggestions = it }
+                        try {
+                        suggestions = repos.listing.searchLocations(q)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        de.openkleinanzeigen.core.common.AppLogger.d("LocationSearch", "cancelled q=$q")
+                        throw e
+                    } catch (e: Exception) {
+                        de.openkleinanzeigen.core.common.AppLogger.e("LocationSearch", "failed q=$q: ${e.message}", e)
+                    }
                     }
                 },
                 germanyLabel = germanyLabel,
