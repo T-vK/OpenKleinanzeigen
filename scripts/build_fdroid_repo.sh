@@ -16,30 +16,25 @@ if [[ -z "$APK_SRC" || ! -f "$APK_SRC" ]]; then
   exit 1
 fi
 
-# fdroid expects a repo icon; ship a minimal placeholder if missing.
+# fdroid expects a repo icon.
 ICON="$FDROID_DIR/repo/icons/icon.png"
 if [[ ! -f "$ICON" ]]; then
-  FDROID_ROOT="$ROOT" python3 <<'PY'
+  cp "$ROOT/app/src/main/res/drawable/ic_launcher_foreground.xml" "$ICON" 2>/dev/null || true
+  if [[ ! -f "$ICON" ]] || file "$ICON" | grep -q XML; then
+    # Minimal valid PNG placeholder
+    python3 -c "
 import struct, zlib, pathlib
-path = pathlib.Path(__import__("os").environ["FDROID_ROOT"]) / "fdroid/repo/icons/icon.png"
-path.parent.mkdir(parents=True, exist_ok=True)
-def chunk(tag, data):
-    return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
-# 1x1 green PNG
-raw = b"\x00\x00\x00\x00\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x01\x00\x00\x00\x0cIDATx\x9cc\x98\x05\x00\x00\x02\x00\x01\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82"
-path.write_bytes(
-    b"\x89PNG\r\n\x1a\n"
-    + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
-    + chunk(b"IDAT", zlib.compress(b"\x00\x01\x00\xfe\xff\x1b\x98\x05"))
-    + chunk(b"IEND", b"")
-)
-PY
+p = pathlib.Path('$ICON')
+p.parent.mkdir(parents=True, exist_ok=True)
+def chunk(t, d):
+    return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+p.write_bytes(b'\\x89PNG\\r\\n\\x1a\\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 48, 48, 8, 2, 0, 0, 0))
++ chunk(b'IDAT', zlib.compress(b'\\x00' * 49)) + chunk(b'IEND', b''))
+"
+  fi
 fi
 
-cp "$APK_SRC" "$REPO_DIR/"
-
-# Repo signing key (indexes the repository, NOT the APK). Cached in CI between runs.
-# Optional: set FDROID_KEYSTORE_BASE64 secret to pin the same key across cache evictions.
+# Repo signing key (signs index-v1.json, NOT the APK). Cached in CI between runs.
 if [[ -n "${FDROID_KEYSTORE_BASE64:-}" ]]; then
   echo "$FDROID_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE"
 elif [[ ! -f "$KEYSTORE" ]]; then
@@ -68,14 +63,15 @@ fi
 
 chmod 600 "$CONFIG" "$KEYSTORE" 2>/dev/null || true
 
-cd "$FDROID_DIR"
-# Debug APKs are not R8-minified; fdroidserver can scan them reliably.
-fdroid update --create-metadata
+# Build index without androguard (broken on AGP 35 / R8 output).
+pip install --quiet 'fdroidserver==2.3.3' 'androguard==3.4.0a1'
+chmod +x "$ROOT/scripts/build_fdroid_index.py"
+"$ROOT/scripts/build_fdroid_index.py" "$APK_SRC" "$FDROID_DIR"
 
 if [[ ! -f "$REPO_DIR/index-v1.json" ]]; then
-  echo "ERROR: fdroid update did not produce index-v1.json" >&2
+  echo "ERROR: index-v1.json missing after build" >&2
   exit 1
 fi
 
 echo "F-Droid repo ready: $REPO_DIR"
-ls -la "$REPO_DIR"
+ls -la "$REPO_DIR" | head -20

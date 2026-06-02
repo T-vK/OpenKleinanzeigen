@@ -102,8 +102,7 @@ jobs:
         env:
           FDROID_KEYSTORE_BASE64: ${{ secrets.FDROID_KEYSTORE_BASE64 }}
         run: |
-          pip install --upgrade fdroidserver
-          chmod +x scripts/build_fdroid_repo.sh scripts/setup_fdroid_repo.sh
+          chmod +x scripts/build_fdroid_repo.sh scripts/setup_fdroid_repo.sh scripts/build_fdroid_index.py
           ./scripts/setup_fdroid_repo.sh
           ./scripts/build_fdroid_repo.sh "${{ steps.package.outputs.apk_name }}"
 
