@@ -63,7 +63,7 @@ android {
             } ?: signingConfigs.getByName("debug")
         }
         debug {
-            applicationIdSuffix = ".debug"
+            // Same applicationId as release; only the signing certificate differs.
         }
     }
 

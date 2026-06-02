@@ -79,11 +79,15 @@ Implementation progress: [`docs/stories/`](docs/stories/README.md)
 AGPL-3.0-or-later — see [LICENSE](LICENSE).
 
 
+## Signing
+
+See [docs/SIGNING.md](docs/SIGNING.md) for APK vs F-Droid repo keys and when GitHub secrets are needed.
+
 ## Troubleshooting
 
 ### "App not installed" when sideloading the APK
 
-Release builds **must be signed**. If GitHub Actions secrets for `KEYSTORE_BASE64` are not configured, CI signs the release APK with the **debug key** so it remains installable for testing. For production updates you should add a stable release keystore (see secrets table above) so all releases share the same signature.
+CI currently publishes a **debug** APK (`assembleDebug`), signed automatically with the debug certificate — no `KEYSTORE_*` secrets required. See [docs/SIGNING.md](docs/SIGNING.md). so it remains installable for testing. For production updates you should add a stable release keystore (see secrets table above) so all releases share the same signature.
 
 The logcat line `PowerHint cannot create session` is unrelated and can be ignored.
 

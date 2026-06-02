@@ -11,8 +11,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -20,7 +20,7 @@ jobs:
     if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
     outputs:
       version_name: ${{ steps.version.outputs.version_name }}
-      bumped: ${{ steps.bump.outputs.bumped }}
+      apk_name: ${{ steps.package.outputs.apk_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,7 +32,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Bump version from commit message
-        id: bump
         run: |
           chmod +x scripts/version_bump.sh
           BEFORE=$(cat version.properties)
@@ -43,12 +42,9 @@ jobs:
           ./scripts/version_bump.sh "$MSG"
           AFTER=$(cat version.properties)
           if [[ "$BEFORE" != "$AFTER" ]]; then
-            echo "bumped=true" >> "$GITHUB_OUTPUT"
             git add version.properties
             git commit -m "chore: bump version to $(grep VERSION_NAME version.properties | cut -d= -f2) [skip ci]"
             git push
-          else
-            echo "bumped=false" >> "$GITHUB_OUTPUT"
           fi
 
       - id: version
@@ -60,47 +56,41 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-          cache: gradle
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept licenses
+      - name: Cache Android SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/lib/android/sdk
+          key: android-sdk-${{ runner.os }}-35
+          restore-keys: |
+            android-sdk-${{ runner.os }}-
+
+      - name: Accept SDK licenses
         run: yes | sdkmanager --licenses || true
 
-      - name: Prepare release signing keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          if [[ -n "$KEYSTORE_BASE64" ]]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
-            cat >> gradle.properties <<EOF
-          RELEASE_STORE_FILE=release.keystore
-          RELEASE_STORE_PASSWORD=$KEYSTORE_PASSWORD
-          RELEASE_KEY_ALIAS=$KEY_ALIAS
-          RELEASE_KEY_PASSWORD=$KEY_PASSWORD
-          EOF
-          else
-            echo "No KEYSTORE_BASE64 secret — release APK will be signed with the debug key (installable, for testing)."
-          fi
+      # Single APK build (debug) — used for GitHub Releases and the F-Droid repo.
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --build-cache --stacktrace
 
-      - name: Build release APK
-        run: chmod +x gradlew && ./gradlew assembleRelease --stacktrace
-
-      - name: Package versioned APK
+      - id: package
         run: |
           VERSION=$(grep VERSION_NAME version.properties | cut -d= -f2)
-          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
-          cp "$APK" "OpenKleinanzeigen-${VERSION}.apk"
+          APK_NAME="OpenKleinanzeigen-${VERSION}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK_NAME"
+          echo "apk_name=$APK_NAME" >> "$GITHUB_OUTPUT"
+          echo "Packaged $APK_NAME ($(du -h "$APK_NAME" | cut -f1))"
 
-      - name: Verify APK is signed
+      - name: Verify APK signature
         run: |
-          APK=$(ls OpenKleinanzeigen-*.apk | head -1)
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-          "$BUILD_TOOLS/apksigner" verify --verbose "$APK"
+          "$BUILD_TOOLS/apksigner" verify --verbose "${{ steps.package.outputs.apk_name }}"
 
       - name: Cache F-Droid repo signing key
         uses: actions/cache@v4
@@ -109,31 +99,32 @@ jobs:
           key: fdroid-repo-signing-key-v1
 
       - name: Build F-Droid repository
+        env:
+          FDROID_KEYSTORE_BASE64: ${{ secrets.FDROID_KEYSTORE_BASE64 }}
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq fdroidserver
+          pip install --upgrade fdroidserver
           chmod +x scripts/build_fdroid_repo.sh scripts/setup_fdroid_repo.sh
           ./scripts/setup_fdroid_repo.sh
-          ./scripts/build_fdroid_repo.sh "$(ls OpenKleinanzeigen-*.apk | head -1)"
+          ./scripts/build_fdroid_repo.sh "${{ steps.package.outputs.apk_name }}"
 
-      - name: Upload release APK artifact
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-apk
-          path: OpenKleinanzeigen-*.apk
+          name: app-apk
+          path: ${{ steps.package.outputs.apk_name }}
 
-      - name: Upload GitHub Pages artifact
+      - name: Upload F-Droid Pages artifact
         uses: actions/upload-artifact@v4
         with:
           name: github-pages
           path: fdroid
 
-      - name: Create or update GitHub Release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version_name }}
           name: OpenKleinanzeigen ${{ steps.version.outputs.version_name }}
-          files: OpenKleinanzeigen-*.apk
+          files: ${{ steps.package.outputs.apk_name }}
           generate_release_notes: true
           make_latest: true
         env:
@@ -145,21 +136,20 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     steps:
-      - name: Download GitHub Pages artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: github-pages
           path: site
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v5
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
-      - name: Deploy to GitHub Pages
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v4
